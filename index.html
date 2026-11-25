@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="de-CH">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Orbit 3DM – Kantonsstrassen Solothurn</title>
+    <script defer src="https://cdn.3dmapping.cloud/26.2.0/javascript/viewer_sdk_javascript.js"></script>
+    <script defer src="./app.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            min-height: 100dvh;
+            margin: 0;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            background: #eef1f3;
+            color: #202d37;
+            font: 1rem/1.45 system-ui, sans-serif;
+        }
+
+        h1 { margin: 0 0 0.75rem; font-size: 1.35rem; }
+
+        form {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: end;
+            gap: 0.75rem;
+        }
+
+        label { display: grid; gap: 0.2rem; }
+        input, button { font: inherit; padding: 0.45rem 0.65rem; border-radius: 0.3rem; }
+        input { width: 11rem; border: 1px solid #7c8b96; }
+        button { border: 1px solid #164f6d; background: #164f6d; color: white; }
+        button:disabled { opacity: 0.55; }
+        #status, #camera { margin: 0.5rem 0 0; }
+        #status[data-error] { color: #9d2822; }
+
+        #viewer-panel {
+            position: relative;
+            flex: 1;
+            min-height: 32rem;
+            overflow: hidden;
+            border-radius: 0.35rem;
+            background: #dce3e7;
+        }
+
+        #orbit-viewer { position: absolute; inset: 0; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Orbit 3DM – Kantonsstrassen Solothurn</h1>
+        <form id="focus-form" aria-label="LV95-Koordinaten">
+            <label>Ostwert (E)
+                <input id="east" type="text" inputmode="decimal" value="2607865" required>
+            </label>
+            <label>Nordwert (N)
+                <input id="north" type="text" inputmode="decimal" value="1228270" required>
+            </label>
+            <button id="open-photo" type="submit" disabled>Panorama öffnen</button>
+            <button id="toggle-test-point" type="button" aria-pressed="false" disabled>GeoJSON-Testpunkt anzeigen</button>
+            <button id="download-sdk-photo" type="button" disabled>Foto per SDK speichern</button>
+        </form>
+        <p id="status" role="status">Orbit SDK wird geladen …</p>
+        <p id="camera" hidden></p>
+    </header>
+    <main id="viewer-panel" aria-label="Orbit Viewer">
+        <div id="orbit-viewer"></div>
+    </main>
+</body>
+</html>
