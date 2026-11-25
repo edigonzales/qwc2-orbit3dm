@@ -10,6 +10,7 @@ const northInput = document.getElementById("north");
 const openButton = document.getElementById("open-photo");
 const testPointButton = document.getElementById("toggle-test-point");
 const downloadButton = document.getElementById("download-sdk-photo");
+const wmsButton = document.getElementById("open-wms-3d");
 const status = document.getElementById("status");
 const camera = document.getElementById("camera");
 const panel = document.getElementById("viewer-panel");
@@ -23,6 +24,42 @@ function showStatus(message, isError = false) {
 function parseCoordinate(value) {
     const normalized = value.trim().replace(/[\s'’]/g, "").replace(",", ".");
     return /^\d+(\.\d+)?$/.test(normalized) ? Number(normalized) : NaN;
+}
+
+function readCoordinates() {
+    const east = parseCoordinate(eastInput.value);
+    const north = parseCoordinate(northInput.value);
+    if (!Number.isFinite(east) || !Number.isFinite(north)) {
+        showStatus("Gib den Ost- und Nordwert in LV95 ein, je eine Zahl pro Feld.", true);
+        return null;
+    }
+    return { east, north };
+}
+
+async function importWmsResource(viewer) {
+    // The local file importer is internal to the pinned Orbit SDK 26.2.0.
+    const store = viewer.Yie?.dataStore;
+    if (typeof store?.openLocalResourceFromFileList !== "function") {
+        throw new Error("Diese Orbit-SDK-Version bietet den lokalen Ressourcenimport nicht an.");
+    }
+
+    const name = "swisstopo-landeskarte-farbe";
+    const config = [
+        "Format=WMS",
+        "MapUrl=https://wms.geo.admin.ch/?",
+        "Layer=ch.swisstopo.pixelkarte-farbe",
+        `CRS=${crs}`,
+        "PixelSize=0.5",
+        "ImageFormat=image/png",
+        ""
+    ].join("\n");
+    const files = new DataTransfer();
+    files.items.add(new File([config], `${name}.otm`, { type: "text/plain" }));
+    files.items.add(new File([`DataSetCRS=${crs}\n`], `${name}.ord`, { type: "text/plain" }));
+    const resource = await store.openLocalResourceFromFileList(files.files);
+    if (!resource) {
+        throw new Error("Orbit konnte die WMS-Ressource nicht importieren.");
+    }
 }
 
 async function initialize() {
@@ -51,6 +88,7 @@ async function initialize() {
     let downloading = false;
     const updateButtons = () => {
         openButton.disabled = !workspace || opening;
+        wmsButton.disabled = !workspace || opening;
         testPointButton.disabled = !workspace || opening || (!photoId && !testPointVisible);
         testPointButton.setAttribute("aria-pressed", String(testPointVisible));
         testPointButton.textContent = testPointVisible
@@ -111,10 +149,8 @@ async function initialize() {
             return;
         }
 
-        const east = parseCoordinate(eastInput.value);
-        const north = parseCoordinate(northInput.value);
-        if (!Number.isFinite(east) || !Number.isFinite(north)) {
-            showStatus("Gib den Ost- und Nordwert in LV95 ein, je eine Zahl pro Feld.", true);
+        const coordinates = readCoordinates();
+        if (!coordinates) {
             return;
         }
 
@@ -124,7 +160,7 @@ async function initialize() {
         showStatus("Orbit sucht ein Panorama …");
 
         try {
-            const position = Coordinate.fromXY(crs, east, north);
+            const position = Coordinate.fromXY(crs, coordinates.east, coordinates.north);
             await viewer.addView(position, Constants.RENDER_MODE_PHOTO_SPHERICAL, true);
             if (workspace === requestedWorkspace) {
                 showStatus("Panorama geöffnet.");
@@ -135,6 +171,50 @@ async function initialize() {
                     ? "Orbit hat zu dieser Koordinate kein Panorama gefunden."
                     : "Orbit konnte das Panorama nicht öffnen. Prüfe die Meldung im Viewer.";
                 showStatus(message, true);
+            }
+        } finally {
+            opening = false;
+            updateButtons();
+        }
+    });
+
+    wmsButton.addEventListener("click", async () => {
+        if (!workspace || opening) {
+            return;
+        }
+
+        const coordinates = readCoordinates();
+        if (!coordinates) {
+            return;
+        }
+
+        const requestedWorkspace = workspace;
+        opening = true;
+        updateButtons();
+        showStatus("Orbit lädt die swisstopo-Landeskarte und öffnet die 3D-Ansicht …");
+
+        try {
+            if (!requestedWorkspace.wmsImported) {
+                await importWmsResource(viewer);
+                requestedWorkspace.wmsImported = true;
+            }
+            if (workspace !== requestedWorkspace) {
+                return;
+            }
+
+            const position = Coordinate.fromXY(crs, coordinates.east, coordinates.north);
+            const viewOptions = new AMap();
+            viewOptions.set(Constants.STARTUP_TILT, -55);
+            await viewer.addViewWithOptions(position, Constants.RENDER_MODE_3D, true, viewOptions);
+            if (workspace === requestedWorkspace) {
+                photoId = null;
+                camera.hidden = true;
+                showStatus("3D-Ansicht geöffnet · WMS Landeskarte farbig © swisstopo");
+            }
+        } catch (error) {
+            if (workspace === requestedWorkspace) {
+                const detail = error?.errorMessage ?? error?.message ?? "";
+                showStatus(`WMS- oder 3D-Ansicht konnte nicht geladen werden. ${detail}`.trim(), true);
             }
         } finally {
             opening = false;

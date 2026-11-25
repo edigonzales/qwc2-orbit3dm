@@ -30,6 +30,12 @@ Methode ist in SDK 26.2.0 vorhanden. Der Server und das Bildformat bestimmen,
 welche Bilddaten zurückkommen. Den Download im Orbit-Ansichtsmenü kannst du
 für dieselbe Foto-ID separat testen, sofern er in der Publikation verfügbar ist.
 
+**WMS in 3D laden** importiert die farbige Landeskarte von swisstopo als
+WMS-Rasterressource der aktuellen Viewer-Sitzung und öffnet die 3D-Ansicht an
+den eingegebenen LV95-Koordinaten. Ein erneuter Klick verwendet dieselbe
+Ressource. **Panorama öffnen** führt zurück zum Strassenbild. Der Prototyp
+nutzt dafür den internen lokalen Dateiimport des Orbit SDK 26.2.0.
+
 Die Seite lädt das SDK vom Orbit-CDN. Gib deine Zugangsdaten im Orbit-Dialog
 erneut ein, damit der Viewer eine eigene Sitzung vom lokalen Origin aus
 öffnet. Für die spätere Integration den Login und das Streaming auch vom
