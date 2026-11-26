@@ -1,0 +1,71 @@
+{
+  "service": "data",
+  "config": {
+    "geometry_default_allow_null": false,
+    "max_feature_limit": 200
+  },
+  "resources": {
+    "datasets": [
+      {
+        "name": "orbit_dev.lines",
+        "db_url": "$$ORBIT_DEV_DATABASE_URL$$",
+        "schema": "orbit_dev",
+        "table_name": "lines",
+        "primary_key": "id",
+        "fields": [
+          {
+            "name": "id",
+            "data_type": "integer",
+            "constraints": {
+              "readOnly": true
+            }
+          },
+          {
+            "name": "name",
+            "data_type": "text",
+            "constraints": {
+              "required": true,
+              "maxlength": 120
+            }
+          }
+        ],
+        "geometry": {
+          "geometry_column": "geom",
+          "geometry_type": "LINESTRING",
+          "srid": 2056
+        },
+        "jointables": {}
+      },
+      {
+        "name": "orbit_dev.polygons",
+        "db_url": "$$ORBIT_DEV_DATABASE_URL$$",
+        "schema": "orbit_dev",
+        "table_name": "polygons",
+        "primary_key": "id",
+        "fields": [
+          {
+            "name": "id",
+            "data_type": "integer",
+            "constraints": {
+              "readOnly": true
+            }
+          },
+          {
+            "name": "name",
+            "data_type": "text",
+            "constraints": {
+              "required": true,
+              "maxlength": 120
+            }
+          }
+        ],
+        "geometry": {
+          "geometry_column": "geom",
+          "geometry_type": "POLYGON",
+          "srid": 2056
+        },
+        "jointables": {}
+      }
+    ]
+  }
+}

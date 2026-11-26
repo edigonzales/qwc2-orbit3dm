@@ -1,0 +1,37 @@
+name: qwc2-orbit3dm
+
+services:
+  postgis:
+    image: postgis/postgis:17-3.5@sha256:01a6a70e41e6c4467c8f55f6063555ed72db2d6662cd0d571040d42eadaeb6f6
+    platform: linux/amd64
+    environment:
+      POSTGRES_DB: orbit_dev
+      POSTGRES_USER: orbit_dev
+      POSTGRES_PASSWORD: ${ORBIT_DEV_DB_PASSWORD:?Run npm run setup}
+    volumes:
+      - orbit-db:/var/lib/postgresql/data
+      - ./local-data/init.sql:/docker-entrypoint-initdb.d/20-orbit.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "orbit_dev", "-d", "orbit_dev"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  data:
+    image: sourcepole/qwc-data-service:v2026.8-lts@sha256:abd35d523dee128fb3f19130bcfef87b9bd812c89ac750537abb47cdece05662
+    platform: linux/amd64
+    depends_on:
+      postgis:
+        condition: service_healthy
+    environment:
+      CONFIG_PATH: /srv/qwc_service/config
+      SERVICE_MOUNTPOINT: /api/v1/data
+      JWT_SECRET_KEY: ${ORBIT_DEV_JWT_SECRET:?Run npm run setup}
+      ORBIT_DEV_DATABASE_URL: postgresql://orbit_dev:${ORBIT_DEV_DB_PASSWORD}@postgis:5432/orbit_dev
+    ports:
+      - '127.0.0.1:${ORBIT_DATA_PORT:-8083}:9090'
+    volumes:
+      - ./local-data/config:/srv/qwc_service/config:ro
+
+volumes:
+  orbit-db:

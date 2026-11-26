@@ -1,0 +1,27 @@
+{
+  "messages": {
+    "orbit3dm": {
+      "title": "Strassenbilder",
+      "pick": "Aufnahme wählen",
+      "center": "Kartenmitte",
+      "showCamera": "Auf Karte zeigen",
+      "layers": "Fachobjekte",
+      "pickPrompt": "Auf der Karte einen Aufnahmeort wählen.",
+      "pickWhileEditing": "Während der Bearbeitung kannst du die Kartenmitte verwenden.",
+      "demo": "Öffentliche Bentley-Demo · San Sebastián",
+      "previous": "Vorherige Aufnahme bleibt sichtbar",
+      "missing": "Keine Aufnahme im Umkreis von {0} m gefunden.",
+      "photoError": "Die Aufnahme konnte nicht geöffnet werden. Erneut versuchen.",
+      "approximate": "Lage der Fachobjekte im Bild ungefähr",
+      "choose": "Einen Ort auf der Karte oder die Kartenmitte wählen.",
+      "loading": "Orbit Viewer wird geladen …",
+      "searching": "Aufnahme wird gesucht …",
+      "connecting": "Öffentliche Bentley-Demo wird geöffnet …",
+      "login": "Im Orbit Viewer anmelden, um die Strassenbilder zu öffnen.",
+      "sdkError": "Der Orbit Viewer konnte nicht geladen werden.",
+      "retry": "Erneut versuchen",
+      "dataError": "{0} konnten nicht geladen werden.",
+      "layerLimit": "{0} · Anzeige auf {1} Objekte beschränkt."
+    }
+  }
+}

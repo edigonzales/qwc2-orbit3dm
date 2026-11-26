@@ -1,0 +1,10 @@
+{
+  "name": "qwc2-orbit3dm",
+  "private": true,
+  "scripts": {
+    "setup": "node scripts/setup.cjs && npm --prefix frontend ci && npm --prefix frontend run iconfont",
+    "dev": "node scripts/dev.cjs",
+    "test": "node --test frontend/dev/*.test.*",
+    "build": "npm --prefix frontend run build"
+  }
+}

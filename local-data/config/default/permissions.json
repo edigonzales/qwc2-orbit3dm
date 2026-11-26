@@ -1,0 +1,37 @@
+{
+  "users": [],
+  "groups": [],
+  "roles": [
+    {
+      "role": "public",
+      "permissions": {
+        "data_datasets": [
+          {
+            "name": "orbit_dev.lines",
+            "attributes": [
+              "id",
+              "name"
+            ],
+            "writable": true,
+            "readable": true,
+            "creatable": true,
+            "updatable": true,
+            "deletable": true
+          },
+          {
+            "name": "orbit_dev.polygons",
+            "attributes": [
+              "id",
+              "name"
+            ],
+            "writable": true,
+            "readable": true,
+            "creatable": true,
+            "updatable": true,
+            "deletable": true
+          }
+        ]
+      }
+    }
+  ]
+}
