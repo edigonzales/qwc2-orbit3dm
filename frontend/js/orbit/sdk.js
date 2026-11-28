@@ -1,4 +1,4 @@
-import {distance, nearestFootprint, orbitCrs, overlayParts, searchRadius, square} from './geometry.mjs';
+import {distance, nearestFootprint, orbitCrs, searchRadius, square} from './geometry.mjs';
 
 const sdkUrl = 'https://cdn.3dmapping.cloud/26.2.0/javascript/viewer_sdk_javascript.js';
 const mode = 'photo_spherical';
@@ -30,38 +30,6 @@ function loadSdk() {
     return loadingSdk;
 }
 
-function makeObjects(sdk, features, color) {
-    const {AList, Color, Coordinate, CoordinatePart, CoordinatePath, MapObject} = sdk;
-    const objects = new AList(MapObject.TYPE);
-    for (const feature of features) {
-        overlayParts(feature.geometry).forEach(({kind, parts}, index) => {
-            if (!parts.length || parts.some(part => part.length < (kind === 'area' ? 4 : 2) ||
-                part.some(point => !Number.isFinite(point[0]) || !Number.isFinite(point[1])))) return;
-
-            const path = new CoordinatePath();
-            path.crs = orbitCrs;
-            for (const coordinates of parts) {
-                const part = new CoordinatePart();
-                part.crs = orbitCrs;
-                for (const [x, y, z] of coordinates) {
-                    part.points.add(Number.isFinite(z) ? Coordinate.fromXYZ(orbitCrs, x, y, z) : Coordinate.fromXY(orbitCrs, x, y));
-                }
-                path.parts.add(part);
-            }
-            const object = new MapObject();
-            object.objectId = String(feature.id) + ':' + index;
-            object.color = Color.fromRGB(...color);
-            object.fillColor = Color.fromRGBA(...color, 65);
-            object.lineWidth = 3;
-            if (kind === 'line') object.spatialLine = path;
-            else object.spatialArea = path;
-            if (typeof feature.properties?.name === 'string') object.tooltip = feature.properties.name;
-            objects.add(object);
-        });
-    }
-    return objects;
-}
-
 async function withTimeout(promise, ms) {
     let timer;
     try {
@@ -90,6 +58,7 @@ export async function createOrbitViewer(container, config, callbacks, signal) {
     const options = new AMap();
     options.set(demo ? Constants.STARTUP_AUTO_LOGIN : Constants.STARTUP_PRESET_LOGIN, login);
     options.set(Constants.STARTUP_CRS, orbitCrs);
+    options.set(Constants.STARTUP_ADD_MAPOBJECT_CAMERA_PROPERTIES, true);
     if (config.boundedSearch) {
         const state = JSON.stringify({photoMaxSearchDistanceStreetlevelSpherical: searchRadius,
             photoSearchCenterStreetlevelSpherical: 'focus', photoSearchDimensionsStreetlevelSpherical: '2d',
@@ -100,29 +69,106 @@ export async function createOrbitViewer(container, config, callbacks, signal) {
     const subscriptions = [];
     let workspace = 0;
     let ready = false;
-    let accepted = null;
+    let lastPanorama = null;
+    let camera = null;
+    let activeViewId;
+    let choosing = false;
     let pending = null;
     let frame = null;
+    let sidebarMode = 1;
+    let overviewStyle;
     const patchedPhotoViews = new WeakSet();
-    const renderedLayers = new Set();
 
     const subscribe = (event, listener) => {
         event.add(listener);
         subscriptions.push(() => event.remove(listener));
     };
-    function reportDirection() {
-        frame = null;
-        if (!accepted || !ready) return;
-        const view = viewer.getFieldOfViews2D().toArray().find(item =>
-            item.properties?.get('photoId') === accepted.id && item.properties.get('renderMode') === mode);
-        const pan = parseFloat(view?.properties.get('pan'));
-        const fov = parseFloat(view?.properties.get('fov'));
-        if (Number.isFinite(pan) && Number.isFinite(fov) && fov > 0) callbacks.heading({pan, fov});
+    function readCamera(viewId) {
+        const fields = viewer.getFieldOfViews2D().toArray().filter(item => item.properties?.get('renderMode'));
+        const {activeWorkspaceState, orbitManager} = viewer.Yie?.dataStore ?? {};
+        const layout = activeWorkspaceState?.viewerLayout;
+        const requestedId = viewId ?? layout?.getMaximizedView()?.id;
+        const selectedId = requestedId ?? activeViewId;
+        const nativeView = orbitManager?.findOrbitViewerById(selectedId);
+        if (nativeView?.viewerState?.openingPhoto) return null;
+        const selected = fields.find(item => item.properties.get('viewId') === selectedId) ??
+            (requestedId == null && !nativeView ? fields[0] : null);
+        if (selected?.properties.get('renderMode') !== mode) return null;
+
+        const id = selected.properties.get('photoId');
+        const {x, y, crs} = selected.spatialPoint ?? {};
+        const pan = parseFloat(selected.properties.get('pan'));
+        const fov = parseFloat(selected.properties.get('fov'));
+        if (!id || String(crs) !== orbitCrs || ![x, y, pan, fov].every(Number.isFinite) || fov <= 0) return null;
+        return {id, viewId: selected.properties.get('viewId'), x, y, pan, fov};
     }
-    function accept(photo) {
-        accepted = photo;
-        callbacks.photo(photo);
-        reportDirection();
+
+    function publishCamera(next) {
+        if (next) lastPanorama = next;
+        if (next !== camera && (!next || !camera || Object.keys(next).some(key => next[key] !== camera[key]))) {
+            camera = next;
+            callbacks.camera(next);
+        }
+        return camera;
+    }
+
+    function refreshCamera() {
+        if (!ready || choosing || signal.aborted || !lastPanorama) return null;
+        return publishCamera(readCamera());
+    }
+
+    function scheduleCamera() {
+        if (frame !== null) return;
+        frame = requestAnimationFrame(() => {
+            frame = null;
+            if (pending?.viewId != null) {
+                const next = readCamera(pending.viewId);
+                if (next && (!pending.id || next.id === pending.id)) {
+                    pending.finish(pending.target && distance(pending.target, [next.x, next.y]) > searchRadius ? 'mismatch' : next);
+                }
+            } else {
+                refreshCamera();
+            }
+        });
+    }
+
+    function selectViewport(event) {
+        const views = viewer.Yie?.dataStore?.orbitManager?.orbitViewers ?? [];
+        const target = event.composedPath()[0];
+        const view = views.find(item => !item.view.isReference() &&
+            item.view.getMapViewerContext()?.getElement()?.contains(target));
+        if (view) {
+            activeViewId = view.view.getViewerId();
+            scheduleCamera();
+        }
+    }
+
+    function setOverviewVisible(show) {
+        if (show) {
+            overviewStyle?.remove();
+            return;
+        }
+        if (!overviewStyle) {
+            overviewStyle = document.createElement('style');
+            // Orbit 26.2 puts the reference-map resize button inside its floating viewport.
+            overviewStyle.textContent = '.oviewport.floating:has(.resize-toggle) { display: none !important; }';
+        }
+        const root = container.firstElementChild?.shadowRoot ?? container;
+        root.append(overviewStyle);
+    }
+
+    function setSidebarVisible(show) {
+        const {dataStore, viewStore} = viewer.Yie ?? {};
+        if (!show) {
+            sidebarMode = dataStore?.activeWorkspaceState?.sidebarMode || sidebarMode;
+            viewer.doAction('setSetting:sidebarVisible:false');
+            return false;
+        }
+        viewer.doAction('setSetting:sidebarPosition:left');
+        viewer.doAction('setSetting:sidebarVisible:true');
+        if (!dataStore?.showSidebar || !viewStore?.setSidebarMode) return false;
+        if (!dataStore.activeWorkspaceState.sidebarMode) viewStore.setSidebarMode(sidebarMode);
+        return true;
     }
     function fixPlanarPhotoHotspot() {
         // SDK 26.2.0's native hotspot omits options, which the planar branch reads after opening the image.
@@ -143,43 +189,32 @@ export async function createOrbitViewer(container, config, callbacks, signal) {
     subscribe(viewer.onWorkspaceOpened, () => {
         workspace += 1;
         ready = true;
-        viewer.doAction('setSetting:sidebarVisible:false');
+        setSidebarVisible(false);
         callbacks.workspace(true);
     });
     subscribe(viewer.onWorkspaceClosed, () => {
         workspace += 1;
         ready = false;
-        accepted = null;
-        renderedLayers.clear();
+        lastPanorama = null;
+        camera = null;
+        activeViewId = undefined;
+        choosing = false;
         pending?.finish('unavailable');
         callbacks.workspace(false);
     });
-    subscribe(viewer.onPhotoOpened, payload => {
+    subscribe(viewer.onPhotoOpened, () => {
         fixPlanarPhotoHotspot();
-        const {photoId, photoPosition, renderMode} = JSON.parse(payload);
-        if (!ready || renderMode !== mode || String(photoPosition?.crs) !== orbitCrs ||
-            !Number.isFinite(photoPosition.x) || !Number.isFinite(photoPosition.y)) return;
-        const photo = {id: photoId, x: photoPosition.x, y: photoPosition.y};
-        if (pending) {
-            if (pending.id && pending.id !== photoId) return;
-            if (pending.target && distance(pending.target, [photo.x, photo.y]) > searchRadius) {
-                pending.finish('mismatch');
-            } else {
-                accept(photo);
-                pending.finish('opened');
-            }
-        } else if (accepted) {
-            accept(photo);
-        }
+        scheduleCamera();
     });
-    subscribe(viewer.onFieldOfViewsChanged, () => {
-        if (frame === null) frame = requestAnimationFrame(reportDirection);
-    });
+    subscribe(viewer.onPhotoClosed, scheduleCamera);
+    subscribe(viewer.onFieldOfViewsChanged, scheduleCamera);
+    subscribe(viewer.onViewVectorChanged, scheduleCamera);
+    container.addEventListener('focusin', selectViewport);
+    container.addEventListener('pointerdown', selectViewport, true);
 
     function openAndWait(target, id, open) {
         return new Promise(resolve => {
-            const timer = setTimeout(() => pending?.finish('unavailable'), 15000);
-            pending = {
+            const active = {
                 target, id,
                 finish(result) {
                     clearTimeout(timer);
@@ -187,9 +222,16 @@ export async function createOrbitViewer(container, config, callbacks, signal) {
                     resolve(result);
                 }
             };
-            const active = pending;
+            const timer = setTimeout(() => active.finish('unavailable'), 15000);
+            pending = active;
             Promise.resolve().then(open).then(viewId => {
-                if (!viewId && pending === active) active.finish(id ? 'unavailable' : 'missing');
+                if (pending !== active) return;
+                if (viewId == null) {
+                    active.finish(id ? 'unavailable' : 'missing');
+                } else {
+                    active.viewId = viewId;
+                    scheduleCamera();
+                }
             }, () => {
                 if (pending === active) active.finish('unavailable');
             });
@@ -197,51 +239,66 @@ export async function createOrbitViewer(container, config, callbacks, signal) {
     }
 
     return {
+        refreshCamera,
+        setSidebarVisible,
+        setOverviewVisible,
         resize(width, height) {
             viewer.setSize(width, height);
         },
         async openNear(target) {
-            if (!ready) return 'unavailable';
+            if (!ready || choosing) return 'unavailable';
             const current = workspace;
             const points = await withTimeout(
                 viewer.getFootprints2D(Bounds.fromXY(orbitCrs, ...square(target, searchRadius)), 1000), 10000
             );
-            if (signal.aborted || workspace !== current) return 'unavailable';
+            if (signal.aborted || workspace !== current || choosing) return 'unavailable';
             const footprint = nearestFootprint(points.toArray(), target);
             if (!footprint && !config.boundedSearch) return 'missing';
-            if (footprint && accepted?.id === footprint.objectId) return 'opened';
+            const visible = refreshCamera();
+            if (footprint && visible?.id === footprint.objectId &&
+                distance(target, [visible.x, visible.y]) <= searchRadius) return 'opened';
 
-            const previous = accepted;
-            const result = footprint
-                ? await openAndWait(target, footprint.objectId, () => viewer.openPhoto(footprint))
-                : await openAndWait(target, null, () => viewer.addView(sdk.Coordinate.fromXY(orbitCrs, ...target), mode, true));
-            if ((result === 'mismatch' || result === 'unavailable') && previous && !signal.aborted && workspace === current) {
-                const restore = new AMap();
-                restore.set(Constants.STARTUP_PHOTO_ID, previous.id);
-                const restored = await openAndWait(null, previous.id, () => viewer.addViewWithOptions(undefined, undefined, true, restore));
-                if (restored !== 'opened') {
-                    accepted = null;
-                    callbacks.photo(null);
+            const previous = lastPanorama;
+            choosing = true;
+            publishCamera(null);
+            try {
+                const result = footprint
+                    ? await openAndWait(target, footprint.objectId, () => viewer.openPhoto(footprint))
+                    : await openAndWait(target, null, () => viewer.addView(sdk.Coordinate.fromXY(orbitCrs, ...target), mode, true));
+                if (signal.aborted || workspace !== current) return 'unavailable';
+                if (typeof result === 'object') {
+                    activeViewId = result.viewId;
+                    publishCamera(result);
+                    return 'opened';
                 }
-            }
-            return result === 'mismatch' ? 'unavailable' : result;
-        },
-        replaceLayer(key, features, color) {
-            if (!ready) return;
-            const name = 'QWC2:' + workspace + ':' + key;
-            if (renderedLayers.delete(name)) viewer.clearOverlayObjects(name);
-            if (features.length) {
-                const objects = makeObjects(sdk, features, color);
-                if (objects.size()) {
-                    viewer.addOverlayObjects(objects, name);
-                    renderedLayers.add(name);
+                if ((result === 'mismatch' || result === 'unavailable') && previous) {
+                    const restore = new AMap();
+                    restore.set(Constants.STARTUP_PHOTO_ID, previous.id);
+                    const restored = await openAndWait(null, previous.id, () => viewer.addViewWithOptions(undefined, undefined, true, restore));
+                    if (signal.aborted || workspace !== current) return 'unavailable';
+                    if (typeof restored === 'object') {
+                        activeViewId = restored.viewId;
+                        publishCamera(restored);
+                    } else {
+                        lastPanorama = null;
+                    }
+                } else if (result === 'missing') {
+                    publishCamera(visible);
                 }
+                return result === 'mismatch' ? 'unavailable' : result;
+            } finally {
+                if (workspace === current) choosing = false;
             }
         },
         close() {
+            ready = false;
+            workspace += 1;
             subscriptions.forEach(unsubscribe => unsubscribe());
+            container.removeEventListener('focusin', selectViewport);
+            container.removeEventListener('pointerdown', selectViewport, true);
             pending?.finish('unavailable');
             if (frame !== null) cancelAnimationFrame(frame);
+            overviewStyle?.remove();
             viewer.close();
         }
     };

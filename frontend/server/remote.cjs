@@ -1,18 +1,15 @@
 // The fixed upstream and development routing follow the Solothurn QWC2 AI Assistant.
-const {request} = require('node:http');
 const {pipeline} = require('node:stream');
 const {json} = require('node:stream/consumers');
 
 const origin = 'https://geo.so.ch';
-const localPrefix = '/orbit-dev-data';
-const heightProfilePath = '/elevation/getheightprofile';
 const publicPlugins = new Set([
     'Map', 'HomeButton', 'LocateButton', 'ZoomIn', 'ZoomOut', 'BackgroundSwitcher',
-    'TopBar', 'BottomBar', 'ThemeSwitcher', 'LayerTree', 'Identify', 'Editing'
+    'TopBar', 'BottomBar', 'ThemeSwitcher', 'LayerTree', 'Identify'
 ]);
-const publicMenu = new Set(['LayerTree', 'Tools', 'Editing']);
+const publicMenu = new Set(['LayerTree', 'Tools']);
 
-function adaptConfig(input, heightProfileUrl = heightProfilePath) {
+function adaptConfig(input) {
     const config = structuredClone(input);
     const filterMenu = items => items.filter(item => publicMenu.has(item.key)).map(item =>
         item.subitems ? {...item, subitems: filterMenu(item.subitems)} : item
@@ -21,16 +18,14 @@ function adaptConfig(input, heightProfileUrl = heightProfilePath) {
         const entries = config.plugins[device].filter(entry => publicPlugins.has(entry.name));
         const topbar = entries.find(entry => entry.name === 'TopBar');
         if (topbar) topbar.cfg.menuItems = filterMenu(topbar.cfg.menuItems || []);
-        const editing = entries.find(entry => entry.name === 'Editing');
-        if (editing) editing.cfg = {...editing.cfg, side: 'left', width: '23em'};
         config.plugins[device] = [
             ...entries,
-            {name: 'OrbitDevLayers'},
-            {name: 'Orbit3DM', cfg: {buttonPosition: device === 'desktop' ? 5 : 3, heightProfileUrl}}
+            {name: 'Orbit3DM', cfg: {buttonPosition: device === 'desktop' ? 5 : 3}}
         ];
     }
-    for (const key of ['authServiceUrl', 'cccConfigService', 'startupTask', 'permalinkServiceUrl']) delete config[key];
-    return {...config, username: null, user_infos: {}, editServiceUrl: localPrefix + '/', assetsPath: '/map/assets',
+    for (const key of ['authServiceUrl', 'cccConfigService', 'startupTask', 'permalinkServiceUrl',
+        'editServiceUrl', 'editTextNullValue', 'editingAddLinkAnchors']) delete config[key];
+    return {...config, username: null, user_infos: {}, assetsPath: '/map/assets',
         translationsPath: '/map/translations', loadTranslationOverrides: true, globallyDisableDockableDialogs: false};
 }
 
@@ -67,91 +62,7 @@ function isPublicRead(url) {
     return /^\/(?:api\/(?:wmts\/|search\/v2\/|dataproduct\/v1\/weblayers$|v1\/(?:featureinfo|legend)\/somap$)|map\/(?:img|assets\/img)\/)/.test(url.pathname);
 }
 
-function localRequestAllowed(path, method) {
-    const match = path.match(/^\/orbit_dev\.(lines|polygons|grundstuecke)(\/.*)$/);
-    if (!match) return false;
-    const [, dataset, suffix] = match;
-    if (method === 'GET' || method === 'HEAD') {
-        return suffix === '/' || /^\/\d+$/.test(suffix) || (dataset === 'grundstuecke' && suffix === '/extent');
-    }
-    if (method === 'POST') return suffix === '/multipart';
-    if (method === 'PUT') return /^\/multipart\/\d+$/.test(suffix);
-    return method === 'DELETE' && /^\/\d+$/.test(suffix);
-}
-
-function proxyLocal(req, res, url, port) {
-    const path = url.pathname.slice(localPrefix.length);
-    const sameOrigin = !req.headers.origin || req.headers.origin === 'http://' + req.headers.host;
-    if (!sameOrigin || !localRequestAllowed(path, req.method)) {
-        res.writeHead(403).end();
-        return;
-    }
-    const headers = Object.fromEntries(['accept', 'accept-language', 'content-type', 'content-length']
-        .filter(name => req.headers[name]).map(name => [name, req.headers[name]]));
-    const upstream = request({
-        hostname: '127.0.0.1', port, path: '/api/v1/data' + path + url.search,
-        method: req.method, headers, timeout: 15000
-    }, response => {
-        res.writeHead(response.statusCode, {
-            'Content-Type': response.headers['content-type'] ?? 'application/json',
-            'Cache-Control': 'no-store'
-        });
-        pipeline(response, res, () => {});
-    });
-    upstream.on('timeout', () => upstream.destroy());
-    upstream.on('error', () => {
-        if (!res.headersSent) res.writeHead(502).end('Lokaler QWC Data Service nicht erreichbar.');
-    });
-    req.on('aborted', () => upstream.destroy());
-    req.pipe(upstream);
-}
-
-async function proxyHeightProfile(req, res) {
-    if (req.method !== 'POST' || (req.headers.origin && req.headers.origin !== 'http://' + req.headers.host)) {
-        return res.writeHead(403).end();
-    }
-    if (req.headers['content-type']?.split(';')[0].trim() !== 'application/json') {
-        return res.writeHead(415).end();
-    }
-    const chunks = [];
-    let size = 0;
-    try {
-        for await (const chunk of req.iterator({destroyOnReturn: false})) {
-            size += chunk.length;
-            if (size > 64 * 1024) {
-                req.resume();
-                return res.writeHead(413).end();
-            }
-            chunks.push(chunk);
-        }
-        const body = Buffer.concat(chunks);
-        let profile;
-        try {
-            profile = JSON.parse(body);
-        } catch {
-            return res.writeHead(400).end();
-        }
-        const {coordinates, distances, projection, samples} = profile || {};
-        if (projection !== 'EPSG:2056' || !Number.isInteger(samples) || samples < 2 || samples > 500 ||
-            !Array.isArray(coordinates) || coordinates.length < 2 ||
-            coordinates.some(point => !Array.isArray(point) || point.length !== 2 || !point.every(Number.isFinite)) ||
-            !Array.isArray(distances) || distances.length !== coordinates.length - 1 ||
-            distances.some(distance => !Number.isFinite(distance) || distance < 0)) {
-            return res.writeHead(400).end();
-        }
-        const response = await fetch(origin + heightProfilePath, {
-            method: 'POST', redirect: 'error', signal: AbortSignal.timeout(5000),
-            headers: {'Content-Type': 'application/json', Accept: 'application/json'},
-            body
-        });
-        res.writeHead(response.status, {'Content-Type': response.headers.get('content-type') || 'application/json'});
-        pipeline(response.body, res, () => {});
-    } catch {
-        if (!res.headersSent) res.writeHead(502).end('Höhenprofildienst nicht erreichbar.');
-    }
-}
-
-function createRemoteMiddleware({profile = 'solothurn', dataPort = 8083, heightProfileUrl} = {}) {
+function createRemoteMiddleware({profile = 'solothurn'} = {}) {
     return async (req, res, next) => {
         const raw = req.url.split('?')[0];
         if (!raw.startsWith('/') || raw.startsWith('//') || /[\\%]/.test(raw) ||
@@ -159,8 +70,6 @@ function createRemoteMiddleware({profile = 'solothurn', dataPort = 8083, heightP
             return res.writeHead(400).end();
         }
         const url = new URL(req.url, 'http://localhost');
-        if (url.pathname.startsWith(localPrefix + '/')) return proxyLocal(req, res, url, dataPort);
-        if (url.pathname === heightProfilePath && !url.search) return proxyHeightProfile(req, res);
         if (url.pathname === '/' || url.pathname === '/map') {
             return res.writeHead(302, {Location: '/map/' + url.search}).end();
         }
@@ -180,7 +89,7 @@ function createRemoteMiddleware({profile = 'solothurn', dataPort = 8083, heightP
             const type = response.headers.get('content-type') || 'application/octet-stream';
             if ((config || themes) && response.ok) {
                 const source = await json(response.body);
-                const result = config ? adaptConfig(source, heightProfileUrl) : adaptThemes(source, profile);
+                const result = config ? adaptConfig(source) : adaptThemes(source, profile);
                 res.writeHead(200, {'Content-Type': 'application/json', 'Cache-Control': 'no-store'});
                 return res.end(req.method === 'HEAD' ? undefined : JSON.stringify(result));
             }
@@ -193,4 +102,4 @@ function createRemoteMiddleware({profile = 'solothurn', dataPort = 8083, heightP
     };
 }
 
-module.exports = {adaptConfig, adaptThemes, createRemoteMiddleware, isPublicRead, localRequestAllowed};
+module.exports = {adaptConfig, adaptThemes, createRemoteMiddleware, isPublicRead};

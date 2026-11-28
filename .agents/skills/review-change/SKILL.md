@@ -1,12 +1,12 @@
 ---
 name: review-change
-description: Review an Orbit3DM patch or verify a browser acceptance run, especially panorama synchronization, the native QWC edit workflow, and overlay rendering.
+description: Review an Orbit3DM patch or verify a browser acceptance run, especially QWC2 map navigation, panorama synchronization, and the Orbit detail view.
 ---
 
 # Änderung prüfen
 
 - Repo-Start und Ausgangscommit festhalten. `npm test` und bei Build-Änderungen `npm run build` ausführen.
-- Im Fixture-Profil den Kameraeinstieg bei laufendem QWC-Entwurf, Dockwechsel, Kartenauswahl und fehlende Abdeckung prüfen. Ein Bildwechsel darf den Kartenausschnitt nur über die explizite Zentrieraktion verschieben.
-- Schreibzugriffe über den nativen Editor und Hintergrundabfragen per Data Service an eigenen Testobjekten prüfen. Entwurf, gespeichertes Objekt, gelöschtes Objekt und nachgezogene Einblendung unterscheiden.
-- Im Bentley-Profil eine echte Aufnahme und sichtbare Linien- und Flächenoverlays prüfen. 2D-Fachobjekte dienen der Orientierung. Den Teststatus der geschützten Solothurner Publikation separat angeben.
+- Im Fixture-Profil Kameraeinstieg, Dockwechsel, Kartenauswahl und fehlende Abdeckung prüfen. Ein Bildwechsel darf den Kartenausschnitt nur über die explizite Zentrieraktion verschieben.
+- Bei Änderungen am Dev-Server den Start mit `npm run dev` und die öffentlichen Solothurner Karten- und Suchabfragen prüfen.
+- Für SDK-Änderungen eine echte Aufnahme prüfen. In der geschützten Solothurner Publikation mit der Lupe das planare Detailbild öffnen und zum Panorama zurückkehren. Bei getrennter Prüfung im Bentley-Profil die Bildquelle angeben.
 - Befunde und ihre Auswirkung knapp dokumentieren. Keine echten Zugangsdaten oder nichtöffentliche Daten in Prüfartefakte übernehmen.

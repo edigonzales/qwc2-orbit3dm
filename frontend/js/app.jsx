@@ -5,13 +5,11 @@ import SearchBox from 'qwc2/components/SearchBox';
 import StandardApp from 'qwc2/components/StandardApp';
 import BackgroundSwitcherPlugin from 'qwc2/plugins/BackgroundSwitcher';
 import BottomBarPlugin from 'qwc2/plugins/BottomBar';
-import EditingPlugin from 'qwc2/plugins/Editing';
 import HomeButtonPlugin from 'qwc2/plugins/HomeButton';
 import IdentifyPlugin from 'qwc2/plugins/Identify';
 import LayerTreePlugin from 'qwc2/plugins/LayerTree';
 import LocateButtonPlugin from 'qwc2/plugins/LocateButton';
 import MapPlugin from 'qwc2/plugins/Map';
-import EditingSupport from 'qwc2/plugins/map/EditingSupport';
 import LocateSupport from 'qwc2/plugins/map/LocateSupport';
 import ThemeSwitcherPlugin from 'qwc2/plugins/ThemeSwitcher';
 import TopBarPlugin from 'qwc2/plugins/TopBar';
@@ -20,8 +18,6 @@ import locale from 'qwc2/static/translations/de-CH.json';
 import {createRoot} from 'react-dom/client';
 
 import Orbit3DM from './Orbit3DM';
-import OrbitDevLayers from './OrbitDevLayers';
-import {demoDatasets} from './orbit/datasets';
 
 import '../icons/build/qwc2-icons.css';
 import translations from '../static/translations/de-CH_overrides.json';
@@ -50,7 +46,7 @@ function OrbitAppMenu({menuItems, openExternalUrl, ...props}) {
 
 function Orbit3DMPlugin(props) {
     const {visible, setVisible} = useContext(OrbitWindowContext);
-    return <Orbit3DM datasets={demoDatasets} {...props} visible={visible} onVisibilityChange={setVisible} />;
+    return <Orbit3DM {...props} visible={visible} onVisibilityChange={setVisible} />;
 }
 
 const appConfig = {
@@ -58,7 +54,7 @@ const appConfig = {
     defaultLocaleData: {...locale, messages: {...locale.messages, ...translations.messages}},
     initialState: {defaultState: {}, mobile: {}},
     pluginsDef: {cfg: {}, plugins: {
-        MapPlugin: MapPlugin({EditingSupport, LocateSupport}),
+        MapPlugin: MapPlugin({LocateSupport}),
         HomeButtonPlugin,
         LocateButtonPlugin,
         ZoomInPlugin,
@@ -69,8 +65,6 @@ const appConfig = {
         ThemeSwitcherPlugin,
         LayerTreePlugin,
         IdentifyPlugin,
-        EditingPlugin: EditingPlugin(),
-        OrbitDevLayersPlugin: OrbitDevLayers,
         Orbit3DMPlugin
     }}
 };

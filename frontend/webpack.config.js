@@ -17,10 +17,7 @@ module.exports = (_env, {mode}) => {
             port: Number(process.env.QWC_PORT || 8082),
             static: false,
             setupMiddlewares(middlewares) {
-                middlewares.unshift({name: 'solothurn', middleware: createRemoteMiddleware({
-                    profile, dataPort: Number(process.env.ORBIT_DATA_PORT || 8083),
-                    heightProfileUrl: process.env.ORBIT_HEIGHT_PROFILE_URL
-                })});
+                middlewares.unshift({name: 'solothurn', middleware: createRemoteMiddleware({profile})});
                 return middlewares;
             }
         },
@@ -31,7 +28,7 @@ module.exports = (_env, {mode}) => {
         },
         module: {
             rules: [
-                {include: ['AttributeForm.js', 'ResizeableWindow.js'].map(file => path.join(qwc, 'components', file)),
+                {include: path.join(qwc, 'components', 'ResizeableWindow.js'),
                     use: path.resolve(__dirname, 'server/qwc-compat-loader.cjs')},
                 {test: /\.jsx?$/, include: path.resolve(__dirname, 'js'), use: 'babel-loader'},
                 {test: /\.css$/, use: ['style-loader', 'css-loader']},

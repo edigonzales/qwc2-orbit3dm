@@ -17,7 +17,7 @@
 }
 
 .orbit3dm-toolbar button,
-.orbit3dm-layers summary,
+.orbit3dm-view-options summary,
 .orbit-fixture-controls button {
     padding: 0.42em 0.62em;
     color: inherit;
@@ -35,32 +35,33 @@
     color: var(--text-color-disabled);
 }
 
-.orbit3dm-layers {
+.orbit3dm-view-options {
     position: relative;
     margin-left: auto;
+    z-index: 3;
 }
 
-.orbit3dm-layers summary {
+.orbit3dm-view-options summary {
     cursor: pointer;
 }
 
-.orbit3dm-layers > div {
+.orbit3dm-view-options > div {
     position: absolute;
+    top: 100%;
     right: 0;
-    z-index: 5;
-    display: grid;
-    gap: 0.5em;
-    min-width: 10em;
-    padding: 0.6em;
+    width: max-content;
+    max-width: 16em;
+    padding: 0.45em 0.65em;
     background: var(--container-bg-color);
     border: 1px solid var(--border-color);
+    box-shadow: 0 2px 5px #0003;
 }
 
-.orbit3dm-layers label {
+.orbit3dm-view-options label {
     display: flex;
     align-items: center;
-    gap: 0.45em;
-    white-space: nowrap;
+    gap: 0.4em;
+    padding: 0.25em 0;
 }
 
 .orbit3dm-message {

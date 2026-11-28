@@ -3,14 +3,12 @@ import {readFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
 import {createRequire} from 'node:module';
-import {json} from 'node:stream/consumers';
 import test from 'node:test';
 
-import {cameraFeatures, nearestFootprint, overlayParts, square} from '../js/orbit/geometry.mjs';
-import {addProfileHeights, buildProfile, profileGeometry} from '../js/orbit/height-profile.mjs';
+import {cameraFeatures, nearestFootprint, square} from '../js/orbit/geometry.mjs';
 
 const require = createRequire(import.meta.url);
-const {adaptConfig, isPublicRead, localRequestAllowed} = require('../server/remote.cjs');
+const {adaptConfig, adaptThemes, createRemoteMiddleware, isPublicRead} = require('../server/remote.cjs');
 const qwcCompatibility = require('../server/qwc-compat-loader.cjs');
 const point = (x, y, id, symbolName = 'circle_filled') => ({
     objectType: 'footprint', symbolName, objectId: id, spatialPoint: {x, y, crs: '2056'}
@@ -26,82 +24,60 @@ test('50 m in LV95 mit sphärischen Footprints und stabiler Auswahl', () => {
 });
 
 test('Blickkeil folgt der Drehung bei gleichbleibender Kamera', () => {
-    const north = cameraFeatures({x: 100, y: 200}, {pan: 0, fov: 60});
-    const east = cameraFeatures({x: 100, y: 200}, {pan: 90, fov: 60});
+    const north = cameraFeatures({x: 100, y: 200, pan: 0, fov: 60});
+    const east = cameraFeatures({x: 100, y: 200, pan: 90, fov: 60});
     assert.deepEqual(north[1], east[1]);
     assert.deepEqual(north[0].geometry.coordinates[0][5], [100, 222]);
     assert.deepEqual(east[0].geometry.coordinates[0][5], [122, 200]);
 });
 
-test('Mehrteilige Flächen behalten ihre Innenringe', () => {
-    const exterior = [[0, 0], [4, 0], [4, 4], [0, 0]];
-    const interior = [[1, 1], [2, 1], [2, 2], [1, 1]];
-    assert.deepEqual(overlayParts({type: 'MultiPolygon', coordinates: [[exterior, interior], [exterior]]}), [
-        {kind: 'area', parts: [exterior, interior]}, {kind: 'area', parts: [exterior]}
-    ]);
-});
-
-test('Proxy erlaubt nur vorgesehene Datensätze und WMS-Leseabfragen', () => {
-    assert.equal(localRequestAllowed('/orbit_dev.lines/multipart', 'POST'), true);
-    assert.equal(localRequestAllowed('/orbit_dev.polygons/multipart/12', 'PUT'), true);
-    assert.equal(localRequestAllowed('/orbit_dev.polygons/12', 'DELETE'), true);
-    assert.equal(localRequestAllowed('/orbit_dev.lines/export', 'GET'), false);
-    assert.equal(localRequestAllowed('/orbit_dev.grundstuecke/extent', 'GET'), true);
-    assert.equal(localRequestAllowed('/orbit_dev.grundstuecke/extent', 'POST'), false);
-    assert.equal(localRequestAllowed('/orbit_dev.grundstuecke/multipart/1', 'PUT'), true);
-    assert.equal(localRequestAllowed('/orbit_dev.grundstuecke_import/', 'GET'), false);
-    assert.equal(localRequestAllowed('/ch.so.internal.lines/multipart', 'POST'), false);
+test('Proxy erlaubt öffentliche Karten- und Suchabfragen', () => {
     const wms = query => new URL('https://geo.so.ch/ows/somap?' + query);
     assert.equal(isPublicRead(wms('REQUEST=GetMap')), true);
     assert.equal(isPublicRead(wms('REQUEST=Transaction')), false);
     assert.equal(isPublicRead(wms('REQUEST=GetMap&request=Transaction')), false);
+    assert.equal(isPublicRead(new URL('https://geo.so.ch/api/search/v2/?searchtext=Solothurn')), true);
+    assert.equal(isPublicRead(new URL('https://geo.so.ch/api/wmts/1.0.0/public/default/2056/8/49/73.png')), true);
+    assert.equal(isPublicRead(new URL('https://geo.so.ch/api/data/v1/example/')), false);
 });
 
-test('Höhenprofil bewahrt Knickpunkte und beschränkt die Anzahl Abtastwerte', () => {
-    const line = [[0, 0], [3.4, 0], [3.4, 2]];
-    const profile = buildProfile(line);
-    assert.deepEqual(profile.request, {coordinates: line, distances: [3.4, 2], projection: 'EPSG:2056', samples: 7});
-    const result = profileGeometry(profile, {elevations: [400, 401, 402, 403, 404, 405, 406]});
-    assert.deepEqual(result.coordinates[0], [0, 0, 400]);
-    assert.deepEqual(result.coordinates.at(-1), [3.4, 2, 406]);
-    assert.deepEqual(result.coordinates[4].slice(0, 2), [3.4, 0]);
-    assert.ok(Math.abs(result.coordinates[4][2] - (400 + 3.4 / 0.9)) < 1e-10);
-    assert.ok(result.coordinates.every(([x, y]) => y === 0 || x === 3.4));
-    assert.deepEqual(line, [[0, 0], [3.4, 0], [3.4, 2]]);
-    assert.equal(buildProfile([[0, 0], [1000, 0]]).request.samples, 500);
-    assert.equal(buildProfile([[0, 0], [0, 0]]), null);
-});
-
-test('Fehler und NoData behalten die betroffene Linie als 2D-Overlay', async t => {
-    const server = createServer(async (req, res) => {
-        const data = await json(req);
-        const easting = data.coordinates[0][0];
-        if (easting === 5) return res.writeHead(503).end();
-        const values = Array.from({length: data.samples}, () => easting === 10 ? 0 : 430);
-        return res.writeHead(200, {'Content-Type': 'application/json'}).end(JSON.stringify({elevations: values}));
-    }).listen(0, '127.0.0.1');
+test('Der Dev-Proxy stellt frühere Editier- und Höhenprofilrouten nicht bereit', async t => {
+    const middleware = createRemoteMiddleware();
+    const server = createServer((req, res) => middleware(req, res, () => res.writeHead(404).end()));
+    server.listen(0, '127.0.0.1');
     t.after(() => server.close());
     await once(server, 'listening');
-    const url = 'http://127.0.0.1:' + server.address().port;
-    const lines = [0, 5, 10].map(x => ({geometry: {type: 'LineString', coordinates: [[x, 0], [x + 2, 0]]}}));
-    const result = await addProfileHeights(lines, url, new AbortController().signal);
-    assert.equal(result.missing, 2);
-    assert.deepEqual(result.features[0].geometry.coordinates, [[0, 0, 430], [1, 0, 430], [2, 0, 430]]);
-    assert.equal(result.features[1], lines[1]);
-    assert.equal(result.features[2], lines[2]);
+    const base = 'http://127.0.0.1:' + server.address().port;
+    const profile = await fetch(base + '/elevation/getheightprofile', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+    });
+    assert.equal(profile.status, 403);
+    const oldRoute = '/orbit-dev-data/orbit_dev.lines/';
+    assert.equal((await fetch(base + oldRoute)).status, 404);
+    assert.equal((await fetch(base + oldRoute + 'multipart', {method: 'POST'})).status, 404);
 });
 
-test('Leerer Profil-Endpunkt bleibt deaktiviert', () => {
-    const input = {plugins: {desktop: [], mobile: []}};
-    assert.equal(adaptConfig(input).plugins.desktop[1].cfg.heightProfileUrl, '/elevation/getheightprofile');
-    assert.equal(adaptConfig(input, '').plugins.desktop[1].cfg.heightProfileUrl, '');
+test('Die Dev-Konfiguration registriert Karte und Viewer ohne Editierfunktionen', () => {
+    const tools = {key: 'Tools', subitems: [{key: 'Editing'}]};
+    const topbar = {name: 'TopBar', cfg: {menuItems: [{key: 'LayerTree'}, tools]}};
+    const entries = [topbar, {name: 'Editing'}, {name: 'OrbitDevLayers'}];
+    const config = adaptConfig({plugins: {desktop: entries, mobile: entries}, editServiceUrl: '/api/data/v1/'});
+    const menu = {name: 'TopBar', cfg: {menuItems: [{key: 'LayerTree'}, {...tools, subitems: []}]}};
+    assert.deepEqual(config.plugins.desktop, [menu, {name: 'Orbit3DM', cfg: {buttonPosition: 5}}]);
+    assert.deepEqual(config.plugins.mobile, [menu, {name: 'Orbit3DM', cfg: {buttonPosition: 3}}]);
+    assert.equal('editServiceUrl' in config, false);
 });
 
-test('Die QWC-Integration aktualisiert Formular und Dock nur bei den relevanten Änderungen', () => {
-    const patch = name => {
-        const resourcePath = require.resolve('qwc2-lts/components/' + name + '.js');
-        return qwcCompatibility.call({resourcePath}, readFileSync(resourcePath, 'utf8'));
-    };
-    assert.match(patch('AttributeForm'), /state\.formValid === formValid \? null : \{formValid\}/);
-    assert.match(patch('ResizeableWindow'), /splitScreenWhenDocked && \(this\.props\.dockable !== prevProps\.dockable/);
+test('Die Dev-Themenkonfiguration entfernt Editiermetadaten und erhält die Kartenquelle', () => {
+    const layer = {name: 'example', editConfig: {example: {}}, editConfigUrl: '/example'};
+    const theme = {id: 'main', url: '/ows/somap', sublayers: [layer]};
+    const {themes} = adaptThemes({themes: {defaultTheme: 'main', items: [theme]}}, 'solothurn');
+    assert.equal(themes.items[0].url, '/ows/somap');
+    assert.deepEqual(themes.items[0].sublayers, [{name: 'example'}]);
+});
+
+test('Die QWC-Integration aktualisiert den Kartenrand bei einem Wechsel der Dockseite', () => {
+    const resourcePath = require.resolve('qwc2-lts/components/ResizeableWindow.js');
+    assert.match(qwcCompatibility(readFileSync(resourcePath, 'utf8')),
+        /splitScreenWhenDocked && \(this\.props\.dockable !== prevProps\.dockable/);
 });
