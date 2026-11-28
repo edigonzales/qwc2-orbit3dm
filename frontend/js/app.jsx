@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {createContext, useContext, useState} from 'react';
 
 import AppMenu from 'qwc2/components/AppMenu';
 import SearchBox from 'qwc2/components/SearchBox';
@@ -32,8 +32,25 @@ for (const key of [...url.searchParams.keys()]) {
 }
 if (url.href !== location.href) history.replaceState(null, '', url);
 
+const OrbitWindowContext = createContext(null);
+const openOrbitCommand = 'orbit3dm:open';
+
+function OrbitAppMenu({menuItems, openExternalUrl, ...props}) {
+    const {setVisible} = useContext(OrbitWindowContext);
+    const tools = {key: 'Orbit3DM', title: 'orbit3dm.title', icon: 'camera', url: openOrbitCommand};
+    const items = menuItems.map(item => item.key === 'Tools'
+        ? {...item, subitems: [...(item.subitems || []), tools]} : item);
+    if (!items.some(item => item.key === 'Tools')) items.push({key: 'Tools', icon: 'tools', subitems: [tools]});
+    return <AppMenu {...props} appMenuClearsTask={false} menuItems={items}
+        openExternalUrl={(target, ...args) => {
+            if (target === openOrbitCommand) setVisible(true);
+            else openExternalUrl(target, ...args);
+        }} />;
+}
+
 function Orbit3DMPlugin(props) {
-    return <Orbit3DM datasets={demoDatasets} {...props} />;
+    const {visible, setVisible} = useContext(OrbitWindowContext);
+    return <Orbit3DM datasets={demoDatasets} {...props} visible={visible} onVisibilityChange={setVisible} />;
 }
 
 const appConfig = {
@@ -47,7 +64,7 @@ const appConfig = {
         ZoomInPlugin,
         ZoomOutPlugin,
         BackgroundSwitcherPlugin,
-        TopBarPlugin: TopBarPlugin({AppMenu, Search: SearchBox}),
+        TopBarPlugin: TopBarPlugin({AppMenu: OrbitAppMenu, Search: SearchBox}),
         BottomBarPlugin,
         ThemeSwitcherPlugin,
         LayerTreePlugin,
@@ -58,4 +75,11 @@ const appConfig = {
     }}
 };
 
-createRoot(document.getElementById('container')).render(<StandardApp appConfig={appConfig} />);
+function DevelopmentApp() {
+    const [visible, setVisible] = useState(false);
+    return <OrbitWindowContext.Provider value={{visible, setVisible}}>
+        <StandardApp appConfig={appConfig} />
+    </OrbitWindowContext.Provider>;
+}
+
+createRoot(document.getElementById('container')).render(<DevelopmentApp />);

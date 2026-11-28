@@ -103,6 +103,7 @@ export async function createOrbitViewer(container, config, callbacks, signal) {
     let accepted = null;
     let pending = null;
     let frame = null;
+    const patchedPhotoViews = new WeakSet();
     const renderedLayers = new Set();
 
     const subscribe = (event, listener) => {
@@ -123,6 +124,21 @@ export async function createOrbitViewer(container, config, callbacks, signal) {
         callbacks.photo(photo);
         reportDirection();
     }
+    function fixPlanarPhotoHotspot() {
+        // SDK 26.2.0's native hotspot omits options, which the planar branch reads after opening the image.
+        const views = viewer.Yie?.dataStore?.orbitManager?.orbitViewers ?? [];
+        for (const view of views) {
+            const openPhotoObject = view.openPhotoObject;
+            if (patchedPhotoViews.has(view) || typeof openPhotoObject !== 'function') continue;
+            view.openPhotoObject = (renderMode, photo, options) => {
+                if (renderMode === mode && options == null && photo?.isPlanarCamera?.() && photo.hasAccurateProjection?.()) {
+                    options = {};
+                }
+                return openPhotoObject.call(view, renderMode, photo, options);
+            };
+            patchedPhotoViews.add(view);
+        }
+    }
 
     subscribe(viewer.onWorkspaceOpened, () => {
         workspace += 1;
@@ -139,6 +155,7 @@ export async function createOrbitViewer(container, config, callbacks, signal) {
         callbacks.workspace(false);
     });
     subscribe(viewer.onPhotoOpened, payload => {
+        fixPlanarPhotoHotspot();
         const {photoId, photoPosition, renderMode} = JSON.parse(payload);
         if (!ready || renderMode !== mode || String(photoPosition?.crs) !== orbitCrs ||
             !Number.isFinite(photoPosition.x) || !Number.isFinite(photoPosition.y)) return;

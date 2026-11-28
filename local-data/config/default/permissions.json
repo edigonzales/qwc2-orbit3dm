@@ -29,6 +29,15 @@
             "creatable": true,
             "updatable": true,
             "deletable": true
+          },
+          {
+            "name": "orbit_dev.grundstuecke",
+            "attributes": ["fid", "t_id", "bemerkung"],
+            "writable": true,
+            "readable": true,
+            "creatable": true,
+            "updatable": true,
+            "deletable": true
           }
         ]
       }

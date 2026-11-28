@@ -34,8 +34,35 @@ weil für 2D-Geometrien die Orbit-Referenzhöhe verwendet wird.
   Die Anpassung ist entfernt. Geometrien, Formular, Speicherung,
   Laden und Löschen liefen über die regulären QWC-Komponenten und den
   lokalen Data Service.
-- Der Live-Test der geschützten Solothurner Publikation bleibt offen.
-  Er umfasst Anmeldung, Footprint-Verfügbarkeit, Bildwechsel und das
-  Aufliegen der Solothurner Fachobjekte auf der Referenzhöhe. Die
-  alternative SDK-Suche ist in der Standardkonfiguration deaktiviert.
+- Bei der Abnahme vom 25. November war der Live-Test der geschützten
+  Solothurner Publikation noch offen. Die spätere Prüfung steht unten.
+  Die alternative SDK-Suche ist in der Standardkonfiguration deaktiviert.
   Ihre 50-m-Begrenzung braucht einen eigenen Nachweis im Browser.
+
+## Grundstücksanpassungen und Höhenprofil
+
+- In Safari startete QWC2 mit geschlossenem Viewer. **Werkzeuge →
+  Strassenbilder** öffnete ihn. Nach dem Ausblenden blieben die Aufnahme
+  und die Auswahl der Fachlayer erhalten. Der Kameraknopf erhielt eine
+  ungespeicherte Bemerkung im nativen QWC-Editor. Nach dem Speichern
+  lieferte der lokale Data Service den geänderten Wert.
+- PostGIS übernahm 36 Linien mit identischer WKB-Geometrie und identischen
+  Attributen. Die temporäre Änderung einer importierten Linie über den
+  Data Service überstand dessen Neustart und den erneuten Import der
+  Quelldatei. Die Teständerung wurde danach zurückgesetzt.
+- Der kantonale Dienst lieferte für die kurze und die längere Prüflinie
+  vollständige Höhenprofile. In beiden Darstellungskopien waren alle
+  originalen XY-Knickpunkte enthalten.
+- Im Safari-Fixture blieb die violette Linie bei deaktivierter Profilabfrage
+  und bei einem abgewiesenen HTTP-Abruf sichtbar. Der Viewer zeigte in
+  beiden Fällen den jeweiligen Hinweis.
+- In der angemeldeten Solothurner Orbit-Publikation waren die magentafarbenen
+  Grundstückslinien an zwei Stellen im grossen Strassenbild sichtbar. Bei
+  einer kurzen Linie liess sich der Verlauf am Strassenrand erkennen. Bei
+  der längeren Linie war ein Knick am Gehweg neben dem Geländer sichtbar.
+  Die Beobachtungen beschreiben die Bildlage. Für eine metrische Prüfung
+  wären zuordenbare vermessene Kontrollpunkte nötig.
+- Das Schliessen und Wiederöffnen über das Menü erhielt die echte
+  Orbit-Sitzung und die zuvor gewählte Aufnahme. An einem dritten Standort
+  ohne Bild im Umkreis von 50 m wurde die Meldung zur fehlenden Aufnahme
+  angezeigt.

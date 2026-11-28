@@ -65,6 +65,36 @@
           "srid": 2056
         },
         "jointables": {}
+      },
+      {
+        "name": "orbit_dev.grundstuecke",
+        "db_url": "$$ORBIT_DEV_DATABASE_URL$$",
+        "schema": "orbit_dev",
+        "table_name": "grundstuecke",
+        "primary_key": "fid",
+        "fields": [
+          {
+            "name": "fid",
+            "data_type": "integer",
+            "constraints": {"readOnly": true}
+          },
+          {
+            "name": "t_id",
+            "data_type": "integer",
+            "constraints": {"readOnly": true}
+          },
+          {
+            "name": "bemerkung",
+            "data_type": "text",
+            "constraints": {"maxlength": 500}
+          }
+        ],
+        "geometry": {
+          "geometry_column": "geom",
+          "geometry_type": "LINESTRING",
+          "srid": 2056
+        },
+        "jointables": {}
       }
     ]
   }

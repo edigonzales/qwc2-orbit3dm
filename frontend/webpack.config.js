@@ -18,7 +18,8 @@ module.exports = (_env, {mode}) => {
             static: false,
             setupMiddlewares(middlewares) {
                 middlewares.unshift({name: 'solothurn', middleware: createRemoteMiddleware({
-                    profile, dataPort: Number(process.env.ORBIT_DATA_PORT || 8083)
+                    profile, dataPort: Number(process.env.ORBIT_DATA_PORT || 8083),
+                    heightProfileUrl: process.env.ORBIT_HEIGHT_PROFILE_URL
                 })});
                 return middlewares;
             }

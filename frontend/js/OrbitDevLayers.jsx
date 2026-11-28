@@ -27,6 +27,18 @@ function DevLayer({dataset}) {
     }, [dispatch, theme, themeLayer, exists, projection, dataset]);
 
     useEffect(() => {
+        if (!exists || !dataset.zoomToDataset) return undefined;
+        let current = true;
+        EditingInterface.getExtent(config, mapCrs, result => {
+            if (!current) return;
+            const bounds = result?.bbox;
+            const valid = Array.isArray(bounds) && bounds.length === 4 && bounds.every(Number.isFinite);
+            dispatch(changeLayerProperty(dataset.layer, 'bbox', valid ? {bounds, crs: mapCrs} : null));
+        });
+        return () => { current = false; };
+    }, [dispatch, dataset, exists, rev]);
+
+    useEffect(() => {
         if (!exists || projection !== mapCrs || !bbox?.some(Boolean)) return undefined;
         let current = true;
         const timer = setTimeout(() => {

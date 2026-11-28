@@ -12,6 +12,7 @@ import PropTypes from 'prop-types';
 import {useDispatch, useSelector} from 'react-redux';
 
 import {cameraFeatures, featureLimit, mapCrs, overlayRadius, searchRadius, square} from './orbit/geometry.mjs';
+import {addProfileHeights} from './orbit/height-profile.mjs';
 import {createOrbitViewer} from './orbit/sdk';
 
 import './Orbit3DM.css';
@@ -29,7 +30,7 @@ const createViewer = process.env.OrbitProfile === 'fixture'
     })
     : createOrbitViewer;
 
-function Overlay({dataset, viewer, photo, enabled, onWarning}) {
+function Overlay({dataset, viewer, photo, enabled, heightProfileUrl, onWarning}) {
     const rev = useSelector(state => state.layers.flat.find(layer =>
         layer.id === dataset.layer || layer.wms_name === dataset.layer)?.rev);
     useEffect(() => {
@@ -40,26 +41,38 @@ function Overlay({dataset, viewer, photo, enabled, onWarning}) {
             onWarning(dataset.id, null);
             return undefined;
         }
-        let current = true;
+        const abort = new AbortController();
         replace();
         onWarning(dataset.id, null);
-        EditingInterface.getFeatures({editDataset: dataset.id, fields: []}, mapCrs, result => {
-            if (!current) return;
+        EditingInterface.getFeatures({editDataset: dataset.id, fields: []}, mapCrs, async result => {
+            if (abort.signal.aborted) return;
             if (!result) {
                 onWarning(dataset.id, tr('dataError', dataset.label));
                 return;
             }
             replace(result.features);
-            if (result.numberMatched > featureLimit) onWarning(dataset.id, tr('layerLimit', dataset.label, featureLimit));
+            const limit = result.numberMatched > featureLimit ? tr('layerLimit', dataset.label, featureLimit) : null;
+            onWarning(dataset.id, limit);
+            if (!dataset.terrainHeights || !result.features.length) return;
+            if (!heightProfileUrl) {
+                onWarning(dataset.id, [limit, tr('heightUnconfigured')].filter(Boolean).join(' · '));
+                return;
+            }
+            const heights = await addProfileHeights(result.features, heightProfileUrl, abort.signal);
+            if (abort.signal.aborted) return;
+            replace(heights.features);
+            if (heights.missing) {
+                onWarning(dataset.id, [limit, tr('heightMissing')].filter(Boolean).join(' · '));
+            }
         }, {bbox: square([photo.x, photo.y], overlayRadius), limit: featureLimit});
         return () => {
-            current = false;
+            abort.abort();
         };
-    }, [dataset, viewer, photo, enabled, rev, onWarning]);
+    }, [dataset, viewer, photo, enabled, heightProfileUrl, rev, onWarning]);
     return null;
 }
 
-function ViewerPanel({publisher, publication, datasets, boundedSearch, onClose}) {
+function ViewerPanel({publisher, publication, datasets, boundedSearch, heightProfileUrl, visible, onClose}) {
     const dispatch = useDispatch();
     const map = useSelector(state => state.map);
     const editing = useSelector(state => Boolean(state.editing.currentContext || state.task.id || state.task.blocked));
@@ -79,6 +92,7 @@ function ViewerPanel({publisher, publication, datasets, boundedSearch, onClose})
     const searchId = useRef(0);
     const host = useRef(null);
     const cameraRef = useRef(null);
+    const visibleRef = useRef(visible);
     const warningRef = useRef((id, message) => setWarnings(current => ({...current, [id]: message})));
 
     useEffect(() => {
@@ -159,19 +173,21 @@ function ViewerPanel({publisher, publication, datasets, boundedSearch, onClose})
     }, [dispatch]);
 
     useEffect(() => {
-        if (photo) {
+        if (visible && photo) {
             dispatch(addLayerFeatures({id: cameraLayer, projection: mapCrs, role: LayerRole.SELECTION},
                 cameraFeatures(photo, heading), true));
         } else dispatch(removeLayer(cameraLayer));
-    }, [photo, heading, dispatch]);
+    }, [photo, heading, visible, dispatch]);
 
     useEffect(() => {
-        if (editing || workspace !== 'ready') setSelecting(false);
-    }, [editing, workspace]);
+        visibleRef.current = visible;
+        if (!visible) dispatch(removeLayer(targetLayer));
+        if (!visible || editing || workspace !== 'ready') setSelecting(false);
+    }, [dispatch, editing, visible, workspace]);
 
     async function choose(coordinates) {
         setSelecting(false);
-        if (!viewer || workspace !== 'ready' || busy.current) return;
+        if (!visible || !viewer || workspace !== 'ready' || busy.current) return;
         const target = CoordinatesUtils.reproject(coordinates, map.projection, mapCrs);
         if (!target?.every(Number.isFinite)) return;
 
@@ -194,7 +210,7 @@ function ViewerPanel({publisher, publication, datasets, boundedSearch, onClose})
 
         setPrevious(Boolean(cameraRef.current));
         setStatus(result === 'missing' ? tr('missing', searchRadius) : tr('photoError'));
-        if (result === 'missing') {
+        if (result === 'missing' && visibleRef.current) {
             dispatch(addLayerFeatures({id: targetLayer, projection: mapCrs, role: LayerRole.SELECTION}, [{
                 id: 'search-target', type: 'Feature', crs: mapCrs, properties: {}, styleName: 'default',
                 geometry: {type: 'Point', coordinates: target},
@@ -210,7 +226,7 @@ function ViewerPanel({publisher, publication, datasets, boundedSearch, onClose})
         <ResizeableWindow detachable={false} dockable={narrow ? 'bottom' : 'right'}
             icon="camera" initialHeight={Math.round(innerHeight * 0.50)}
             initialWidth={Math.max(320, Math.round(innerWidth * 0.43))}
-            initiallyDocked onClose={onClose} scrollable={false} splitScreenWhenDocked title={tr('title')}>
+            initiallyDocked onClose={onClose} scrollable={false} splitScreenWhenDocked title={tr('title')} usePortal visible={visible}>
             <div className="orbit3dm-panel" onKeyDown={event => {
                 if (event.key === 'Escape' && selecting) {
                     event.stopPropagation();
@@ -260,31 +276,39 @@ function ViewerPanel({publisher, publication, datasets, boundedSearch, onClose})
                     </div>}
                 </div>
             </div>
-            <MapSelection active={selecting && ready && !editing}
+            <MapSelection active={visible && selecting && ready && !editing}
                 drawCondition={event => event.originalEvent.button === 0 && event.originalEvent.isPrimary !== false}
                 geometryChanged={geometry => geometry && selecting && !editing && choose(geometry.coordinates)}
                 geomType="Point" hideGeometry />
-            {datasets.map(dataset => <Overlay dataset={dataset} enabled={selected.includes(dataset.id)}
-                key={dataset.id} onWarning={warningRef.current} photo={photo} viewer={viewer} />)}
+            {datasets.map(dataset => <Overlay dataset={dataset} enabled={visible && selected.includes(dataset.id)}
+                heightProfileUrl={heightProfileUrl} key={dataset.id} onWarning={warningRef.current} photo={photo} viewer={viewer} />)}
         </ResizeableWindow>
     );
 }
 
 export default function Orbit3DM({
     buttonPosition = 5, publisher = 'https://www.digitalmaps.ch',
-    publication = '150449_Kantonsstrassen_Solothurn', datasets = emptyDatasets, boundedSearch = false
+    publication = '150449_Kantonsstrassen_Solothurn', datasets = emptyDatasets, boundedSearch = false,
+    heightProfileUrl = '', visible: controlledVisible, onVisibilityChange
 }) {
-    const [visible, setVisible] = useState(false);
+    const [localVisible, setLocalVisible] = useState(false);
+    const [hasOpened, setHasOpened] = useState(false);
+    const visible = controlledVisible ?? localVisible;
+    const setVisible = onVisibilityChange ?? setLocalVisible;
+    useEffect(() => {
+        if (visible) setHasOpened(true);
+    }, [visible]);
     return (
         <>
-            <MapButton active={visible} icon="camera" onClick={() => setVisible(current => !current)}
+            <MapButton active={visible} icon="camera" onClick={() => setVisible(!visible)}
                 buttonRef={button => {
                     button?.setAttribute('aria-label', tr('title'));
                     button?.setAttribute('aria-expanded', String(visible));
                 }}
                 position={buttonPosition} tooltip={tr('title')} />
-            {visible && <ViewerPanel boundedSearch={boundedSearch} datasets={datasets} onClose={() => setVisible(false)}
-                publication={publication} publisher={publisher} />}
+            {(visible || hasOpened) && <ViewerPanel boundedSearch={boundedSearch} datasets={datasets}
+                heightProfileUrl={heightProfileUrl} onClose={() => setVisible(false)}
+                publication={publication} publisher={publisher} visible={visible} />}
         </>
     );
 }
@@ -294,8 +318,12 @@ Orbit3DM.propTypes = {
     buttonPosition: PropTypes.number,
     datasets: PropTypes.arrayOf(PropTypes.shape({
         id: PropTypes.string.isRequired, layer: PropTypes.string.isRequired,
-        label: PropTypes.string.isRequired, color: PropTypes.arrayOf(PropTypes.number).isRequired
+        label: PropTypes.string.isRequired, color: PropTypes.arrayOf(PropTypes.number).isRequired,
+        terrainHeights: PropTypes.bool
     })),
+    heightProfileUrl: PropTypes.string,
+    onVisibilityChange: PropTypes.func,
     publication: PropTypes.string,
-    publisher: PropTypes.string
+    publisher: PropTypes.string,
+    visible: PropTypes.bool
 };
