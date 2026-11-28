@@ -9,6 +9,7 @@ import {cameraFeatures, nearestFootprint, square} from '../js/orbit/geometry.mjs
 
 const require = createRequire(import.meta.url);
 const {adaptConfig, adaptThemes, createRemoteMiddleware, isPublicRead} = require('../server/remote.cjs');
+const {createStaticConfiguration} = require('../server/static-config.cjs');
 const qwcCompatibility = require('../server/qwc-compat-loader.cjs');
 const point = (x, y, id, symbolName = 'circle_filled') => ({
     objectType: 'footprint', symbolName, objectId: id, spatialPoint: {x, y, crs: '2056'}
@@ -74,6 +75,30 @@ test('Die Dev-Themenkonfiguration entfernt Editiermetadaten und erhält die Kart
     const {themes} = adaptThemes({themes: {defaultTheme: 'main', items: [theme]}}, 'solothurn');
     assert.equal(themes.items[0].url, '/ows/somap');
     assert.deepEqual(themes.items[0].sublayers, [{name: 'example'}]);
+});
+
+test('Der statische Build verwendet öffentliche Solothurner Dienste und relative Übersetzungspfade', () => {
+    const entries = [{name: 'TopBar', cfg: {logoUrl: '/map'}}];
+    const config = {plugins: {desktop: entries, mobile: entries}, searchServiceUrl: '/api/search/v2/',
+        searchDataServiceUrl: '/api/data/v1/', dataproductServiceUrl: '/api/dataproduct/v1/',
+        editServiceUrl: '/api/data/v1/'};
+    const tile = '/api/wmts/1.0.0/example/default/{TileMatrix}/{TileRow}/{TileCol}.png';
+    const input = {themes: {defaultTheme: 'main', backgroundLayers: [{url: 'https://geo.so.ch' + tile}],
+        items: [{id: 'main', url: '/ows/somap', featureInfoUrl: '/api/v1/featureinfo/somap',
+            sublayers: [{name: 'example', editConfigUrl: '/map/editConfig.json'}]}]}};
+    const output = createStaticConfiguration(config, input);
+    assert.equal(output.config.assetsPath, 'https://geo.so.ch/map/assets');
+    assert.equal(output.config.translationsPath, 'translations');
+    assert.equal(output.config.plugins.desktop[0].cfg.logoUrl, './');
+    assert.equal(output.config.searchServiceUrl, 'https://geo.so.ch/api/search/v2/');
+    assert.equal(output.config.searchDataServiceUrl, 'https://geo.so.ch/api/data/v1/');
+    assert.equal(output.config.dataproductServiceUrl, 'https://geo.so.ch/api/dataproduct/v1/');
+    assert.equal('editServiceUrl' in output.config, false);
+    const theme = output.themes.themes.items[0];
+    assert.equal(theme.url, 'https://geo.so.ch/ows/somap');
+    assert.equal(theme.featureInfoUrl, 'https://geo.so.ch/api/v1/featureinfo/somap');
+    assert.deepEqual(theme.sublayers, [{name: 'example'}]);
+    assert.equal(output.themes.themes.backgroundLayers[0].url, 'https://geo.so.ch' + tile);
 });
 
 test('Die QWC-Integration aktualisiert den Kartenrand bei einem Wechsel der Dockseite', () => {

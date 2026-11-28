@@ -38,15 +38,25 @@ Orbit-Seitenleiste und die Übersichtskarte einzeln umschalten.
 Beide Profile sind an den Dev-Server gebunden. Die Standardkonfiguration
 verwendet die Solothurner Publikation. Der Webpack-Build verwendet ebenfalls
 die Standardkonfiguration. `npm test` prüft die LV95-Suche, den Blickkeil,
-die Dev-Konfiguration und das Routing der öffentlichen Dienste. `npm run build`
-erstellt den Produktionsbuild. Zum Vorbereiten von Tests oder Build aus einer
-frischen Kopie lässt sich `npm run setup` separat ausführen.
+die Konfiguration und das Routing der öffentlichen Dienste. Zum Vorbereiten
+von Tests oder Build aus einer frischen Kopie lässt sich `npm run setup`
+separat ausführen.
 
 Die [Safari-Abnahme](docs/safari-abnahme.md) hält die Tests, Korrekturen und
 die Sichtprüfung in der geschützten Solothurner Publikation fest.
 
 In einem bestehenden QWC2-Client kann `Orbit3DM.jsx` als Plugin registriert
 werden.
+
+## GitHub Pages
+
+`npm run build` erstellt die statische Website in `frontend/prod/`.
+Der Build bezieht Konfiguration und Themen von `geo.so.ch`. Karte und Suche
+fragen die öffentlichen Solothurner Dienste direkt aus dem Browser ab.
+Die Anmeldung für Strassenbilder erfolgt im eingebetteten Orbit-Viewer.
+
+GitHub Actions veröffentlicht den Build bei Änderungen auf `main`.
+[Solothurner Prototyp auf GitHub Pages](https://edigonzales.github.io/qwc2-orbit3dm/)
 
 ## Standalone-SDK-Prototyp in Safari
 

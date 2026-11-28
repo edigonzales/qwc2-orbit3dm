@@ -10,7 +10,12 @@ module.exports = (_env, {mode}) => {
     if (!['solothurn', 'fixture', 'bentley'].includes(profile)) throw new Error('Unbekanntes ORBIT_PROFILE');
     return {
         entry: './js/app.jsx',
-        output: {path: path.resolve(__dirname, 'prod'), publicPath: '/map/', filename: 'dist/[name].js', clean: true},
+        output: {
+            path: path.resolve(__dirname, 'prod'),
+            publicPath: mode === 'development' ? '/map/' : 'auto',
+            filename: 'dist/[name].js',
+            clean: true
+        },
         devtool: mode === 'development' ? 'eval-source-map' : false,
         devServer: {
             host: '127.0.0.1',

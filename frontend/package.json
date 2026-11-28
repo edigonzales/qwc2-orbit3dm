@@ -29,6 +29,6 @@
   "scripts": {
     "iconfont": "qwc_build_iconfont",
     "start": "webpack serve --mode development",
-    "build": "webpack --mode production"
+    "build": "webpack --mode production && node server/static-config.cjs"
   }
 }

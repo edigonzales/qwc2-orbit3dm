@@ -102,4 +102,4 @@ function createRemoteMiddleware({profile = 'solothurn'} = {}) {
     };
 }
 
-module.exports = {adaptConfig, adaptThemes, createRemoteMiddleware, isPublicRead};
+module.exports = {adaptConfig, adaptThemes, createRemoteMiddleware, isPublicRead, origin};
